@@ -6,7 +6,7 @@ from copy import deepcopy
 from MCTS import MCTSNode
 
 # set (hyper)parameters
-MCTS_PLAYOUT_NUM = 10
+MCTS_PLAYOUT_NUM = 6
 
 class MCTS():
     def __init__(self, game, current_team):
@@ -42,7 +42,7 @@ class MCTS():
                     self.game.revert(leaf_node_state_id) # revert to the state of the leaf node selected for following simulation
                     
         else: # if the leaf node selected with UCB represents game over, simulation is omitted and leap to apply backup.
-            print('terminal selected')
+            print('Selection pharse: Terminal leaf node was selected')
             winner_team = self.game.get_winning_team()
             node.backpropagate(winner_team)
         
@@ -55,15 +55,13 @@ class MCTS():
         return action_with_most_visited
         
         
-
-
 class MCTSBot(botbowl.Agent):
 
     def __init__(self, name, seed=None):
         super().__init__(name)
         self.playout_num = MCTS_PLAYOUT_NUM
         self.rnd = np.random.RandomState(seed)
-        self.formation_setup = [False, False] # False and True index 0 respectively denotes formation is not selected yet and have been selected, while false in index 1 represents the formations is selected but not end_setup.
+        self.formation_setup = False
 
     def new_game(self, game, team):
         self.my_team = team
@@ -77,53 +75,50 @@ class MCTSBot(botbowl.Agent):
         game_copy.away_agent.human = True
 
         # Apply MCTS for planning
-        print('=====> Start playout')
+        print('<===============> Start playout <===============>')
         mcts = MCTS(game_copy, self.my_team) # need to take as input the current team planning the next action using MCTS.
         for i in range(self.playout_num):
             mcts.playout()
-            print('=====> Playout ', i, ' finished ====================================================================')
+            print('=====> Playout ', i+1, ' finished ====================================================================')
             print()
-
 
         # After a certain amount of playouts, choose the reasonable action (here is to choose the action with most visited time, as the real action).
         action = mcts.getMostVistedAction()
-        print('Real action: ', action.action_type)
+        print('********Real action: ', action.action_type)
         return action
         
     def act(self, game):
         # Formation and kick/receive setup
         # Explictly determine heads/tails, kick/receive and formations before MCTS in order to reduce size of tree
-        actions_type = [action_choice.action_type for action_choice in game.state.available_actions]
-        if self.formation_setup == [False, False]:
-            position = None
-            player = None
-            # (1) determine heads or tails then kick or receive
-            if botbowl.ActionType.HEADS in actions_type or botbowl.ActionType.RECEIVE in actions_type:
-                action_choice = self.rnd.choice(game.state.available_actions)
-            
-            # (2) determine formations without considering custom
-            if botbowl.ActionType.PLACE_PLAYER in actions_type:
-                action_choice = self.rnd.choice(game.state.available_actions[2:]) # randomly choose a foramtion from the last two index
-                self.formation_setup = [True, False] # formations is selected but have yet to end setup
-            # print(action_choice.action_type)
-            return botbowl.Action(action_choice.action_type, position=position, player=player)
-
-        elif self.formation_setup == [True, False]:
-            action_choice = game.state.available_actions[1] # END_SETUP
-            self.formation_setup = [True, True]
-            # print(action_choice.action_type)
-            return botbowl.Action(action_choice.action_type, position=None, player=None)
-        
-        if len(actions_type) == 1:
-            if len(game.state.available_actions[0].players) == len(game.state.available_actions[0].positions) == 0:
-                print(game.state.available_actions[0])
-                return game.state.available_actions[0]
-
+        action_choices = game.state.available_actions
+        actions_type = [action_choice.action_type for action_choice in action_choices]
         # print(actions_type)
-        print(game.state.available_actions)
+        # (1) determine heads or tails then kick or receive
+        if botbowl.ActionType.HEADS in actions_type or botbowl.ActionType.RECEIVE in actions_type:
+            action_choice = self.rnd.choice(game.state.available_actions)
+            return botbowl.Action(action_choice.action_type)
+        
+        # (2) determine formations without considering custom
+        # (2.1) formation
+        if botbowl.ActionType.PLACE_PLAYER in actions_type and self.formation_setup == False:
+            action_choice = self.rnd.choice(game.state.available_actions[2:]) # randomly choose a foramtion from the last two/one index
+            self.formation_setup = True # formations is selected but have yet to end setup
+            # print('>>>>>>>>>>>>>>>>Setup: ', action_choice.action_type)
+            return botbowl.Action(action_choice.action_type)
+        # (2.2) end_setup
+        if botbowl.ActionType.PLACE_PLAYER in actions_type and self.formation_setup == True:
+            action_choice = game.state.available_actions[1] # END_SETUP
+            self.formation_setup = False
+            # print('>>>>>>>>>>>>>>>>Setup: ', action_choice.action_type)
+            return botbowl.Action(action_choice.action_type)
+        # (3) Reduce redundant action leading to small size of tree. (E.g., choose END_TURN if there are no other actions)
+        if len(actions_type) == 1:
+            if len(action_choices[0].players) == len(action_choices[0].positions) == 0:
+                action_choice = action_choices[0]
+                # print('>>Action: ', action_choice.action_type)
+                return botbowl.Action(action_choice.action_type)
 
         action = self.getBestAction(game) # take as input the game environment
-        
         return action
 
     def end_game(self, game):
@@ -131,7 +126,6 @@ class MCTSBot(botbowl.Agent):
 
 # Register the bot to the framework
 botbowl.register_bot('mcts-bot', MCTSBot)
-
 
 if __name__ == "__main__":
 
@@ -141,8 +135,6 @@ if __name__ == "__main__":
     config.competition_mode = False
     config.pathfinding_enabled = True
     config.debug_mode = False
-    config.competition_mode = False
-    # config = get_config("gym-5.json")
     ruleset = botbowl.load_rule_set(config.ruleset)
     arena = botbowl.load_arena(config.arena)
     home = botbowl.load_team_by_filename("human", ruleset)
@@ -160,7 +152,6 @@ if __name__ == "__main__":
         game = botbowl.Game(i, home, away, home_agent, away_agent, config, arena=arena, ruleset=ruleset)
         game.config.fast_mode = True
         
-
         print("Starting game", (i+1))
         game.init()
         print("Game is over")

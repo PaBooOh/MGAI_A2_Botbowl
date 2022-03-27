@@ -1,10 +1,9 @@
 from copy import deepcopy
-from telnetlib import PRAGMA_HEARTBEAT
 import numpy as np
 import botbowl
 from botbowl.core import Action
 
-C = np.sqrt(2) # Temperature coeff
+C = 1.0 / np.sqrt(2) # Temperature coeff
 
 # Node
 class MCTSNode():
@@ -64,48 +63,46 @@ class MCTSNode():
         available_actions = game.get_available_actions()
         actions_type = [action_choice.action_type for action_choice in game.state.available_actions]
 
-        print('>>Leaf node actions: ' , available_actions)
+        print('>>Leaf node available actions: ' , available_actions)
+        print()
         # Custom rules
-        if botbowl.ActionType.PLACE_PLAYER in actions_type: # (1) Formation is not allowed to use custom
-            # if foramtion is selceted but have yet to end setup
-            if self.action.action_type in [botbowl.ActionType.SETUP_FORMATION_LINE, botbowl.ActionType.SETUP_FORMATION_SPREAD, botbowl.ActionType.SETUP_FORMATION_WEDGE, botbowl.ActionType.SETUP_FORMATION_ZONE]:
-                action_choice = game.state.available_actions[1] # END_SETUP
-                print('>>Perform:', action_choice.action_type)
-                team = action_choice.team
-                action = Action(action_choice.action_type)
-                next_state = game.revert(leaf_node_state_id) # revert to the previous state and get the next_state.
-                node_expanded = MCTSNode(action=action, state_steps=next_state, team=team, parent=self)
-                self.children.append(node_expanded)
-            # if need to select an formation (Place players and end setup is not allowed in this case)
-            else: 
-                action_choice = np.random.choice(game.state.available_actions[2:])
-                print('>>Perform:', action_choice.action_type)
-                team = action_choice.team
-                action = Action(action_choice.action_type)
-                game.step(action)
-                next_state = game.revert(leaf_node_state_id) # revert to the previous state and get the next_state.
-                node_expanded = MCTSNode(action=action, state_steps=next_state, team=team, parent=self)
-                self.children.append(node_expanded)
-            return
+        # if botbowl.ActionType.PLACE_PLAYER in actions_type: # (1) Formation is not allowed to use custom
+        #     # if foramtion is selceted but have yet to end setup
+        #     if self.action.action_type in [botbowl.ActionType.SETUP_FORMATION_LINE, botbowl.ActionType.SETUP_FORMATION_SPREAD, botbowl.ActionType.SETUP_FORMATION_WEDGE, botbowl.ActionType.SETUP_FORMATION_ZONE]:
+        #         action_choice = game.state.available_actions[1] # END_SETUP
+        #         print('>>Perform:', action_choice.action_type)
+        #         team = action_choice.team
+        #         action = Action(action_choice.action_type)
+        #         next_state = game.revert(leaf_node_state_id) # revert to the previous state and get the next_state.
+        #         node_expanded = MCTSNode(action=action, state_steps=next_state, team=team, parent=self)
+        #         self.children.append(node_expanded)
+        #     # if need to select an formation (Place players and end setup is not allowed in this case)
+        #     else: 
+        #         action_choice = np.random.choice(game.state.available_actions[2:])
+        #         print('>>Perform:', action_choice.action_type)
+        #         team = action_choice.team
+        #         action = Action(action_choice.action_type)
+        #         game.step(action)
+        #         next_state = game.revert(leaf_node_state_id) # revert to the previous state and get the next_state.
+        #         node_expanded = MCTSNode(action=action, state_steps=next_state, team=team, parent=self)
+        #         self.children.append(node_expanded)
+        #     return
 
         for action_choice in available_actions:
-            if botbowl.ActionType.UNDO == action_choice.action_type: # (2) ignore UNDO
+            # Custom rules
+            if botbowl.ActionType.UNDO == action_choice.action_type: # (1) ignore UNDO
                 continue
             # if botbowl.ActionType.END_TURN == action_choice.action_type and len(actions_type) >= 2: # (3) ignore END_TURN if there are still other actions that can be chosen.
             #     continue
-            if botbowl.ActionType.END_PLAYER_TURN == action_choice.action_type and len(actions_type) >= 2: # (3) ignore END_TURN if there are still other actions that can be chosen.
+            if botbowl.ActionType.END_PLAYER_TURN == action_choice.action_type and len(actions_type) >= 2: # (2) ignore END_TURN if there are still other actions that can be chosen.
                 continue
 
             team = action_choice.team # need to get which team will perforam this action for backup phrase.
-            # if self.action is not None:
-            #     print('>>CurrentAction: ', self.action.action_type)
-            # else:
-            #     print('>>CurrentAction: None')
-            print('>>Perform:', action_choice.action_type)
-            print('>>Players_len: ', len(action_choice.players))
-            print('>>Positions_len: ', len(action_choice.positions))
-            # print('>>Team: ', team)
+            print('>>Expand an action: ', action_choice.action_type)
+            print('>>Action.Players_len: ', len(action_choice.players))
+            print('>>Action.Positions_len: ', len(action_choice.positions))
             print('===========================================')
+            print()
             
             # E.g., Actions: Start_move, Start_block etc
             for player in action_choice.players:
@@ -140,9 +137,9 @@ class MCTSNode():
         # game = deepcopy(game)
         # Do a random simulation: rollout until the terminal is reached
 
+        # randomly select an action as well as its corresponding player or position
         while not game.state.game_over:
-            actions_type = [action_choice.action_type for action_choice in game.state.available_actions]
-            # randomly select an action as well as its corresponding player or position
+            # actions_type = [action_choice.action_type for action_choice in game.state.available_actions]
             # if botbowl.ActionType.PLACE_PLAYER in actions_type:
             while True:
                 action_choice = np.random.choice(game.state.available_actions)
