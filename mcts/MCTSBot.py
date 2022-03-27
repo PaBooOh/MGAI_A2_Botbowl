@@ -79,12 +79,12 @@ class MCTSBot(botbowl.Agent):
         mcts = MCTS(game_copy, self.my_team) # need to take as input the current team planning the next action using MCTS.
         for i in range(self.playout_num):
             mcts.playout()
-            print('=====> Playout ', i+1, ' finished ====================================================================')
+            print('========> Playout ', i+1, ' finished <========')
             print()
 
         # After a certain amount of playouts, choose the reasonable action (here is to choose the action with most visited time, as the real action).
         action = mcts.getMostVistedAction()
-        print('********Real action: ', action.action_type)
+        print('******** Real action: ', action.action_type)
         return action
         
     def act(self, game):
@@ -117,6 +117,11 @@ class MCTSBot(botbowl.Agent):
                 action_choice = action_choices[0]
                 # print('>>Action: ', action_choice.action_type)
                 return botbowl.Action(action_choice.action_type)
+        # (4) Choose Use_Reroll rather than Not_use_roll
+        if botbowl.ActionType.USE_REROLL in actions_type and botbowl.ActionType.DONT_USE_REROLL in actions_type and len(actions_type) == 2:
+            action_choice = game.state.available_actions[0] # USE_Reroll
+            return botbowl.Action(action_choice.action_type)
+
 
         action = self.getBestAction(game) # take as input the game environment
         return action
