@@ -62,25 +62,18 @@ class MCTSNode():
         leaf_node_state_id = game.get_step() # store current state (step) that represents the leaf node to do "expand"
         available_actions = game.get_available_actions()
         actions_type = [action_choice.action_type for action_choice in game.state.available_actions]
-
+        print('Ball_carrier: ', game.get_ball_carrier())
         print('>>Leaf node available actions: ', available_actions)
-        # Custom rules
-        # if botbowl.ActionType.PLACE_PLAYER == action_choice.action_type:
-        #     formations = [botbowl.ActionType.SETUP_FORMATION_LINE, botbowl.ActionType.SETUP_FORMATION_SPREAD, botbowl.ActionType.SETUP_FORMATION_WEDGE, botbowl.ActionType.SETUP_FORMATION_ZONE]
-        #     if self.action.action_type in formations:
-        #        action_choice = game.state.available_actions[1] # End setup
-        #        action = Action(action_choice.action_type)
-        #        next_state = game.revert(leaf_node_state_id) # revert to the previous state and get the next_state.
-        #     else:
-        #         if self.action.action_type in formations:
-        #             action = Action(action_choice.action_type, player=player)
-        if botbowl.ActionType.PLACE_PLAYER in actions_type: # (1) Formation is not allowed to use custom
+        # Heuristic
+        # (1) Formation setup is not allowed to use custom setup.
+        if botbowl.ActionType.PLACE_PLAYER in actions_type: # 
             # if foramtion is selceted but have yet to end setup
             formations = [botbowl.ActionType.SETUP_FORMATION_LINE, botbowl.ActionType.SETUP_FORMATION_SPREAD, botbowl.ActionType.SETUP_FORMATION_WEDGE, botbowl.ActionType.SETUP_FORMATION_ZONE]
             if self.action.action_type in formations:
                 action_choice = game.state.available_actions[1] # END_SETUP
                 team = action_choice.team
                 action = Action(action_choice.action_type)
+                game.step(action)
                 next_state = game.revert(leaf_node_state_id) # revert to the previous state and get the next_state.
                 node_expanded = MCTSNode(action=action, state_steps=next_state, team=team, parent=self)
                 self.children.append(node_expanded)
@@ -97,13 +90,60 @@ class MCTSNode():
                 print('>>Expand an action: ', action_choice.action_type)
             return
         
+        # (2) Priority is given to STAND_UP
+        if botbowl.ActionType.STAND_UP in actions_type:
+            action_choice = game.state.available_actions[1] # STAND_UP
+            team = action_choice.team
+            action = Action(action_choice.action_type)
+            game.step(action)
+            next_state = game.revert(leaf_node_state_id) # revert to the previous state and get the next_state.
+            node_expanded = MCTSNode(action=action, state_steps=next_state, team=team, parent=self)
+            self.children.append(node_expanded)
+            print('>>Expand an action: ', action_choice.action_type)
+            return
+        
+        # (3) Priority is given to find and pick up the ball when actions like START_?
+        
+        if game.get_ball_carrier() is None and botbowl.ActionType.START_MOVE in actions_type:
+            print('Start to find ball...')
+            for action_choice in available_actions:
+                if botbowl.ActionType.START_MOVE == action_choice.action_type:
+                    for player in action_choice.players:
+                        team = action_choice.team
+                        action = Action(action_choice.action_type, player=player)
+                        game.step(action) # perform an action and then get to next state
+                        next_state = game.revert(leaf_node_state_id) # revert to the previous state and get the next_state.
+                        node_expanded = MCTSNode(action=action, state_steps=next_state, team=team, parent=self)
+                        self.children.append(node_expanded)
+                        print('>>Expand an action: ', action_choice.action_type)
+                    return
+        # when actions contain MOVE
+        if game.get_ball_carrier() is None and botbowl.ActionType.MOVE in actions_type:
+            print('Start to find ball...')
+            ball_reachable = False
+            for action_choice in available_actions:
+                if botbowl.ActionType.MOVE == action_choice.action_type:
+                    for position in action_choice.positions:
+                        if position == game.get_ball_position():
+                            ball_reachable = True
+                            team = action_choice.team
+                            action = Action(action_choice.action_type, position=position)
+                            game.step(action) # perform an action and then get to next state
+                            next_state = game.revert(leaf_node_state_id) # revert to the previous state and get the next_state.
+                            node_expanded = MCTSNode(action=action, state_steps=next_state, team=team, parent=self)
+                            self.children.append(node_expanded)
+                            print('>>Expand an action: ', action_choice.action_type)
+                    if ball_reachable:
+                        return
+                        
+        # Start to expand actions
         for action_choice in available_actions:
-            # Custom rules
+            # Heuristic
             if botbowl.ActionType.UNDO == action_choice.action_type: # (1) ignore UNDO
                 continue
             if botbowl.ActionType.END_PLAYER_TURN == action_choice.action_type and len(actions_type) >= 2: # (2) ignore END_TURN if there are still other actions that can be chosen.
                 continue
-            if botbowl.ActionType.DONT_USE_REROLL == action_choice.action_type and len(actions_type) == 2:
+            if botbowl.ActionType.DONT_USE_REROLL == action_choice.action_type and len(actions_type) == 2: # (3) ignore dont use reroll
                 continue
             
             team = action_choice.team # need to get which team will perforam this action for backup phrase.
@@ -115,10 +155,13 @@ class MCTSNode():
             
             # E.g., Actions: Start_move, Start_block etc
             for player in action_choice.players:
+                # Heuristic
+                # (4) Players who are not holding ball is not allowed to perform Start_handoff/pass.
+                if botbowl.ActionType.START_HANDOFF == action_choice.action_type or botbowl.ActionType.START_PASS == action_choice.action_type:
+                    if player != game.get_ball_carrier():
+                        continue
                 action = Action(action_choice.action_type, player=player)
-                # print(action_choice.action_type)
                 game.step(action) # perform an action and then get to next state
-                # next_state = game.get_step() # need to store state due to randomness of this game
                 next_state = game.revert(leaf_node_state_id) # revert to the previous state and get the next_state.
                 node_expanded = MCTSNode(action=action, state_steps=next_state, team=team, parent=self)
                 self.children.append(node_expanded)
@@ -126,9 +169,7 @@ class MCTSNode():
             # E.g., Actions: move, block etc
             for position in action_choice.positions:
                 action = Action(action_choice.action_type, position=position)
-                # print(action_choice.action_type)
                 game.step(action) # perform an action and then get to next state
-                # next_state = game.get_step() # need to store state due to randomness of this game
                 next_state = game.revert(leaf_node_state_id) # revert to the previous state and get the next_state.
                 node_expanded = MCTSNode(action=action, state_steps=next_state, team=team, parent=self)
                 self.children.append(node_expanded)
@@ -142,6 +183,7 @@ class MCTSNode():
                 self.children.append(node_expanded)
 
     def simulate(self, game):
+        # print('Start simulation...')
         game.forward(self.state) # from previous leaf node to this expanded node which is a new leaf node right now.
         # game = deepcopy(game)
         # Do a random simulation: rollout until the terminal is reached
@@ -174,14 +216,12 @@ class MCTSNode():
                     action =  botbowl.Action(action_choice.action_type)
                     game.step(action)
                     continue
-
-            # while True:
-            #     action_choice = np.random.choice(game.state.available_actions)
-            #     if action_choice.action_type != botbowl.ActionType.PLACE_PLAYER:
-            #         break
+            
+            # if botbowl.ActionType.START_HANDOFF in actions_type or botbowl.ActionType.START_PASS in actions_type:
+            #         if player != game.get_ball_carrier():
+            #             continue
             
             action_choice = np.random.choice(game.state.available_actions)
-            
             position = np.random.choice(action_choice.positions) if len(action_choice.positions) > 0 else None
             player = np.random.choice(action_choice.players) if len(action_choice.players) > 0 else None
             action = botbowl.Action(action_choice.action_type, position=position, player=player)
@@ -192,6 +232,7 @@ class MCTSNode():
         self.backpropagate(winner_team) # (4) Backup: takes as input the terminal game
 
     def backpropagate(self, winner_team):
+        # print('Start backup...')
         current_team = self.team
         # Once the terminal is reached, update the result starting from the expanded node.
         # (1) update the expanded node or the terminal node

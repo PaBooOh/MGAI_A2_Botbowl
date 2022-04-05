@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 
 import botbowl
+from matplotlib.pyplot import draw
 import numpy as np
 from copy import deepcopy
 from MCTS import MCTSNode
 
 # set (hyper)parameters
-MCTS_PLAYOUT_NUM = 6
+MCTS_PLAYOUT_NUM = 2
 
 class MCTS():
     def __init__(self, game, current_team):
@@ -81,6 +82,7 @@ class MCTSBot(botbowl.Agent):
             mcts.playout()
             print('========> Playout ', i+1, ' finished <========')
             print()
+            print()
 
         # After a certain amount of playouts, choose the reasonable action (here is to choose the action with most visited time, as the real action).
         action = mcts.getMostVistedAction()
@@ -121,8 +123,19 @@ class MCTSBot(botbowl.Agent):
         if botbowl.ActionType.USE_REROLL in actions_type and botbowl.ActionType.DONT_USE_REROLL in actions_type and len(actions_type) == 2:
             action_choice = game.state.available_actions[0] # USE_Reroll
             return botbowl.Action(action_choice.action_type)
-
-
+        # (5) Priority is given to STAND_UP
+        if botbowl.ActionType.STAND_UP in actions_type:
+            action_choice = game.state.available_actions[1] # STAND_UP
+            return botbowl.Action(action_choice.action_type)
+        # # (6) Pick up ball
+        # if game.get_ball_carrier() is None and botbowl.ActionType.MOVE in actions_type:
+        #     for action_choice in action_choices:
+        #         if botbowl.ActionType.MOVE == action_choice.action_type:
+        #             for position in action_choice.positions:
+        #                 if position == game.get_ball_position():
+        #                     action = botbowl.Action(action_choice.action_type, position=position)
+        #                     return action
+        
         action = self.getBestAction(game) # take as input the game environment
         return action
 
@@ -148,8 +161,9 @@ if __name__ == "__main__":
     # Play 10 games
     # game_times = []
     wins = 0
-    tds = 0
-    games_num = 1
+    draws = 0
+    TDs = 0
+    games_num = 10
     for i in range(games_num):
         away_agent = botbowl.make_bot("random")
         home_agent = botbowl.make_bot("mcts-bot")
@@ -159,10 +173,12 @@ if __name__ == "__main__":
         
         print("Starting game", (i+1))
         game.init()
-        print("Game is over")
-
-        wins += 1 if game.get_winning_team() is game.state.home_team else 0
-        tds += game.state.home_team.state.score
+        print("*******************************************************************Game is over")
+        if game.get_winning_team() is game.state.home_team:
+            wins += 1
+        elif game.get_winning_team() is None:
+            draws += 1
+        TDs += game.state.home_team.state.score
     
-    print(f"won {wins}/{games_num}")
-    print(f"Own TDs per game={tds/games_num}")
+    print(f"Wins: {wins}/{games_num}, Draws: {draws}/{games_num}, Loses: {games_num-wins-draws}/{games_num}")
+    print(f"Own TDs per game={TDs/games_num}")
