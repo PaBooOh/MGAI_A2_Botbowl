@@ -58,7 +58,7 @@ class MCTSNode():
         return selected_node
         
     # Second phrase for MCTS playout
-    def expand(self, game):
+    def expand(self, game, historical_real_action_sequence):
         leaf_node_state_id = game.get_step() # store current state (step) that represents the leaf node to do "expand"
         available_actions = game.get_available_actions()
         actions_type = [action_choice.action_type for action_choice in game.state.available_actions]
@@ -92,15 +92,16 @@ class MCTSNode():
         
         # (2) Priority is given to STAND_UP
         if botbowl.ActionType.STAND_UP in actions_type:
-            action_choice = game.state.available_actions[1] # STAND_UP
-            team = action_choice.team
-            action = Action(action_choice.action_type)
-            game.step(action)
-            next_state = game.revert(leaf_node_state_id) # revert to the previous state and get the next_state.
-            node_expanded = MCTSNode(action=action, state_steps=next_state, team=team, parent=self)
-            self.children.append(node_expanded)
-            print('>>Expand an action: ', action_choice.action_type)
-            return
+            for action_choice in game.state.available_actions:
+                if action_choice.action_type == botbowl.ActionType.STAND_UP:
+                    team = action_choice.team
+                    action = Action(action_choice.action_type)
+                    game.step(action)
+                    next_state = game.revert(leaf_node_state_id) # revert to the previous state and get the next_state.
+                    node_expanded = MCTSNode(action=action, state_steps=next_state, team=team, parent=self)
+                    self.children.append(node_expanded)
+                    print('>>Expand an action: ', action_choice.action_type)
+                    return
         
         # (3) Priority is given to find and pick up the ball when actions like START_?
         
@@ -141,8 +142,12 @@ class MCTSNode():
             # Heuristic
             if botbowl.ActionType.UNDO == action_choice.action_type: # (1) ignore UNDO
                 continue
-            if botbowl.ActionType.END_PLAYER_TURN == action_choice.action_type and len(actions_type) >= 2: # (2) ignore END_TURN if there are still other actions that can be chosen.
-                continue
+            # if botbowl.ActionType.END_PLAYER_TURN == action_choice.action_type and len(actions_type) >= 2: # (2) ignore END_TURN if there are still other actions that can be chosen.
+            #     continue
+            if botbowl.ActionType.MOVE == action_choice.action_type: # (2) More than 3 (included) consecutive actions MOVE are not allowed.
+                if len(historical_real_action_sequence) >= 2:
+                    if historical_real_action_sequence[-1].action_type == botbowl.ActionType.MOVE and historical_real_action_sequence[-2].action_type == botbowl.ActionType.MOVE: # check if leaf node belongs to MOVE
+                        continue
             if botbowl.ActionType.DONT_USE_REROLL == action_choice.action_type and len(actions_type) == 2: # (3) ignore dont use reroll
                 continue
             
@@ -159,6 +164,10 @@ class MCTSNode():
                 # (4) Players who are not holding ball is not allowed to perform Start_handoff/pass.
                 if botbowl.ActionType.START_HANDOFF == action_choice.action_type or botbowl.ActionType.START_PASS == action_choice.action_type:
                     if player != game.get_ball_carrier():
+                        continue
+                # (5) # Players not in tackle zone is not allowed to start block.
+                if botbowl.ActionType.START_BLOCK == action_choice.action_type:
+                    if game.num_tackle_zones_in(player) == 0:
                         continue
                 action = Action(action_choice.action_type, player=player)
                 game.step(action) # perform an action and then get to next state

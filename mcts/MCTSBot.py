@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from collections import deque
 import botbowl
 from matplotlib.pyplot import draw
 import numpy as np
@@ -10,12 +11,13 @@ from MCTS import MCTSNode
 MCTS_PLAYOUT_NUM = 2
 
 class MCTS():
-    def __init__(self, game, current_team):
+    def __init__(self, game, current_team, historical_real_action_sequence):
         self.root = MCTSNode(state_steps = None, team = current_team) # parent and action are None. State is integer id (for revert) here rather than steps (for forward)
         # self.root_game = deepcopy(game) # revert for new playout
         self.root_state = game.get_step() # revert for new playout
         self.team = current_team # represents which team will perform an action in this state (step).
         self.game = game # current game env
+        self.historical_real_action_sequence = historical_real_action_sequence
 
     # Do 1 time MCTS playout where playout including select, expand, simulate and backup.
     def playout(self):
@@ -36,7 +38,7 @@ class MCTS():
         
         if not self.game.state.game_over: # if the leaf node selected with UCB does not represent game over (leaf node in mid of tree)
             leaf_node_state_id = self.game.get_step() # For revert
-            node.expand(self.game) # (2) Expansion: check if the current state is the terminal before expand all actions at a time.
+            node.expand(self.game, self.historical_real_action_sequence) # (2) Expansion: check if the current state is the terminal before expand all actions at a time.
             for child in node.getChildren(): # (3) Simulation: simulate all expanded nodes that have yet to be simulated
                 if child.getVisitNum() == 0:
                     child.simulate(self.game)
@@ -63,6 +65,7 @@ class MCTSBot(botbowl.Agent):
         self.playout_num = MCTS_PLAYOUT_NUM
         self.rnd = np.random.RandomState(seed)
         self.formation_setup = False
+        self.historical_real_action_sequence = deque(maxlen=3)
 
     def new_game(self, game, team):
         self.my_team = team
@@ -77,7 +80,7 @@ class MCTSBot(botbowl.Agent):
 
         # Apply MCTS for planning
         print('<===============> Start playout <===============>')
-        mcts = MCTS(game_copy, self.my_team) # need to take as input the current team planning the next action using MCTS.
+        mcts = MCTS(game_copy, self.my_team, self.historical_real_action_sequence) # need to take as input the current team planning the next action using MCTS.
         for i in range(self.playout_num):
             mcts.playout()
             print('========> Playout ', i+1, ' finished <========')
@@ -86,6 +89,7 @@ class MCTSBot(botbowl.Agent):
 
         # After a certain amount of playouts, choose the reasonable action (here is to choose the action with most visited time, as the real action).
         action = mcts.getMostVistedAction()
+        self.historical_real_action_sequence.append(action)
         print('******** Real action: ', action.action_type)
         return action
         
@@ -173,12 +177,15 @@ if __name__ == "__main__":
         
         print("Starting game", (i+1))
         game.init()
-        print("*******************************************************************Game is over")
+        print("*******************************************************************Game is over*******************************************************************")
         if game.get_winning_team() is game.state.home_team:
             wins += 1
         elif game.get_winning_team() is None:
             draws += 1
         TDs += game.state.home_team.state.score
-    
-    print(f"Wins: {wins}/{games_num}, Draws: {draws}/{games_num}, Loses: {games_num-wins-draws}/{games_num}")
+        print(f"Wins: {wins}/{i}, Draws: {draws}/{i}, Loses: {games_num-wins-draws}/{i}")
+        print(f"Own TDs per game={TDs/games_num}")
+        print()
+        print()
+    print(f"Match over! Wins: {wins}/{games_num}, Draws: {draws}/{games_num}, Loses: {games_num-wins-draws}/{games_num}")
     print(f"Own TDs per game={TDs/games_num}")
