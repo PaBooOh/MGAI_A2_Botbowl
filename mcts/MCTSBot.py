@@ -2,13 +2,12 @@
 
 from collections import deque
 import botbowl
-from matplotlib.pyplot import draw
 import numpy as np
 from copy import deepcopy
 from MCTS import MCTSNode
 
 # set (hyper)parameters
-MCTS_PLAYOUT_NUM = 2
+MCTS_PLAYOUT_NUM = 4
 
 class MCTS():
     def __init__(self, game, current_team, historical_real_action_sequence):
@@ -36,9 +35,9 @@ class MCTS():
         # if node.state is not None: # For root node, no need to forward.
         #     self.game.forward(node.state) # get to the state (from current to future) of the leaf node selected.
         
-        if not self.game.state.game_over: # if the leaf node selected with UCB does not represent game over (leaf node in mid of tree)
+        if not self.game.state.game_over: # if the leaf node selected with UCB does not represents game over (leaf node in mid of tree)
             leaf_node_state_id = self.game.get_step() # For revert
-            node.expand(self.game, self.historical_real_action_sequence) # (2) Expansion: check if the current state is the terminal before expand all actions at a time.
+            node.expand(self.game, self.root, self.historical_real_action_sequence) # (2) Expansion: check if the current state is the terminal before expand all actions at a time.
             for child in node.getChildren(): # (3) Simulation: simulate all expanded nodes that have yet to be simulated
                 if child.getVisitNum() == 0:
                     child.simulate(self.game)
@@ -79,11 +78,12 @@ class MCTSBot(botbowl.Agent):
         game_copy.away_agent.human = True
 
         # Apply MCTS for planning
-        print('<===============> Start playout <===============>')
+        # print('<===============> Start playout <===============>')
         mcts = MCTS(game_copy, self.my_team, self.historical_real_action_sequence) # need to take as input the current team planning the next action using MCTS.
         for i in range(self.playout_num):
+            print('========> Playout ', i+1, ' start <========')
+            print('Historical actions: ', [action.action_type for action in self.historical_real_action_sequence])
             mcts.playout()
-            print('========> Playout ', i+1, ' finished <========')
             print()
             print()
 
@@ -102,43 +102,54 @@ class MCTSBot(botbowl.Agent):
         # (1) determine heads or tails then kick or receive
         if botbowl.ActionType.HEADS in actions_type or botbowl.ActionType.RECEIVE in actions_type:
             action_choice = self.rnd.choice(game.state.available_actions)
-            return botbowl.Action(action_choice.action_type)
+            action = botbowl.Action(action_choice.action_type)
+            self.historical_real_action_sequence.append(action)
+            return action
         
         # (2) determine formations without considering custom
         # (2.1) formation
         if botbowl.ActionType.PLACE_PLAYER in actions_type and self.formation_setup == False:
             action_choice = self.rnd.choice(game.state.available_actions[2:]) # randomly choose a foramtion from the last two/one index
             self.formation_setup = True # formations is selected but have yet to end setup
-            # print('>>>>>>>>>>>>>>>>Setup: ', action_choice.action_type)
-            return botbowl.Action(action_choice.action_type)
+            action = botbowl.Action(action_choice.action_type)
+            self.historical_real_action_sequence.append(action)
+            return action
         # (2.2) end_setup
         if botbowl.ActionType.PLACE_PLAYER in actions_type and self.formation_setup == True:
             action_choice = game.state.available_actions[1] # END_SETUP
             self.formation_setup = False
-            # print('>>>>>>>>>>>>>>>>Setup: ', action_choice.action_type)
-            return botbowl.Action(action_choice.action_type)
+            action = botbowl.Action(action_choice.action_type)
+            self.historical_real_action_sequence.append(action)
+            return action
         # (3) Reduce redundant action leading to small size of tree. (E.g., choose END_TURN if there are no other actions)
         if len(actions_type) == 1:
             if len(action_choices[0].players) == len(action_choices[0].positions) == 0:
                 action_choice = action_choices[0]
-                # print('>>Action: ', action_choice.action_type)
-                return botbowl.Action(action_choice.action_type)
+                action = botbowl.Action(action_choice.action_type)
+                self.historical_real_action_sequence.append(action)
+                return action
         # (4) Choose Use_Reroll rather than Not_use_roll
         if botbowl.ActionType.USE_REROLL in actions_type and botbowl.ActionType.DONT_USE_REROLL in actions_type and len(actions_type) == 2:
             action_choice = game.state.available_actions[0] # USE_Reroll
-            return botbowl.Action(action_choice.action_type)
+            action = botbowl.Action(action_choice.action_type)
+            self.historical_real_action_sequence.append(action)
+            return action
         # (5) Priority is given to STAND_UP
         if botbowl.ActionType.STAND_UP in actions_type:
-            action_choice = game.state.available_actions[1] # STAND_UP
-            return botbowl.Action(action_choice.action_type)
-        # # (6) Pick up ball
-        # if game.get_ball_carrier() is None and botbowl.ActionType.MOVE in actions_type:
-        #     for action_choice in action_choices:
-        #         if botbowl.ActionType.MOVE == action_choice.action_type:
-        #             for position in action_choice.positions:
-        #                 if position == game.get_ball_position():
-        #                     action = botbowl.Action(action_choice.action_type, position=position)
-        #                     return action
+            for action_choice in game.state.available_actions:
+                if action_choice.action_type == botbowl.ActionType.STAND_UP:
+                    action = botbowl.Action(action_choice.action_type)
+                    self.historical_real_action_sequence.append(action)
+                    return action
+        
+        # # (6) Randomly place ball
+        if botbowl.ActionType.PLACE_BALL in actions_type:
+            action_choice = game.state.available_actions[0]
+            position = np.random.choice(action_choice.positions) if len(action_choice.positions) > 0 else None
+            player = np.random.choice(action_choice.players) if len(action_choice.players) > 0 else None
+            action = botbowl.Action(action_choice.action_type, position=position, player=player)
+            self.historical_real_action_sequence.append(action)
+            return action
         
         action = self.getBestAction(game) # take as input the game environment
         return action
@@ -155,6 +166,7 @@ if __name__ == "__main__":
     # config = botbowl.load_config("bot-bowl")
     config = botbowl.load_config("web")
     config.competition_mode = False
+    # config.pathfinding_enabled = False
     config.pathfinding_enabled = True
     config.debug_mode = False
     ruleset = botbowl.load_rule_set(config.ruleset)
@@ -183,8 +195,8 @@ if __name__ == "__main__":
         elif game.get_winning_team() is None:
             draws += 1
         TDs += game.state.home_team.state.score
-        print(f"Wins: {wins}/{i}, Draws: {draws}/{i}, Loses: {games_num-wins-draws}/{i}")
-        print(f"Own TDs per game={TDs/games_num}")
+        print(f"Wins: {wins}/{i+1}, Draws: {draws}/{i+1}, Loses: {i+1-wins-draws}/{i+1}")
+        print(f"Own TDs per game={TDs/(i+1)}")
         print()
         print()
     print(f"Match over! Wins: {wins}/{games_num}, Draws: {draws}/{games_num}, Loses: {games_num-wins-draws}/{games_num}")
