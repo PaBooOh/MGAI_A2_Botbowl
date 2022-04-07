@@ -47,7 +47,6 @@ class MCTSNode():
         Check if the team of the child correspond to the team of the root due to the fact that
         actions are not necessarily performed alternate in this game.
         """
-        
         left_term = self.getQ() if self.team == self.parent.team else (1.0 - self.getQ())
         right_term = C * np.sqrt(2.0 * np.log(self.getParent().getVisitNum()) / self.getVisitNum())
         UCB_value = left_term + right_term
@@ -120,9 +119,7 @@ class MCTSNode():
                     self.children.append(node_expanded)
                     print('>>Expand an action: ', action_choice.action_type)
                     return
-        
-        # (3) Priority is given to find and pick up the ball when actions like START_?
-        
+        # (3) Priority is given to find and pick up the ball if available actions like START_? and ball is on the ground.
         if game.get_ball_carrier() is None and botbowl.ActionType.START_MOVE in actions_type:
             print('Start to find ball...')
             for action_choice in available_actions:
@@ -134,39 +131,37 @@ class MCTSNode():
                         next_state = game.revert(leaf_node_state_id) # revert to the previous state and get the next_state.
                         node_expanded = MCTSNode(action=action, state_steps=next_state, team=team, parent=self, action_player=player)
                         self.children.append(node_expanded)
-                        print('>>Expand an action: ', action_choice.action_type)
+                        print('>>Expand an action that finds the ball: ', action_choice.action_type)
                     return
-        # when actions contain MOVE
+        # if available actions contain MOVE and previous action is START_MOVE and the ball is on the ground
         if game.get_ball_carrier() is None and botbowl.ActionType.MOVE in actions_type:
-            print('Start to find ball...')
-            ball_reachable = False
-            for action_choice in available_actions:
-                if botbowl.ActionType.MOVE == action_choice.action_type:
-                    for position in action_choice.positions:
-                        if position == game.get_ball_position():
-                            ball_reachable = True
-                            team = action_choice.team
-                            action = Action(action_choice.action_type, position=position)
-                            game.step(action) # perform an action and then get to next state
-                            next_state = game.revert(leaf_node_state_id) # revert to the previous state and get the next_state.
-                            node_expanded = MCTSNode(action=action, state_steps=next_state, team=team, parent=self)
-                            self.children.append(node_expanded)
-                            print('>>Expand an action: ', action_choice.action_type)
-                    if ball_reachable:
-                        return
+            if (historical_real_action_sequence[-1].action_type == botbowl.ActionType.START_MOVE and len(root_node.children) == 0) or (self.action is not None and self.action.action_type == botbowl.ActionType.START_MOVE):
+                print('Start to find ball...')
+                ball_reachable = False
+                for action_choice in available_actions:
+                    if botbowl.ActionType.MOVE == action_choice.action_type:
+                        for position in action_choice.positions:
+                            if position == game.get_ball_position():
+                                ball_reachable = True
+                                team = action_choice.team
+                                action = Action(action_choice.action_type, position=position)
+                                game.step(action) # perform an action and then get to next state
+                                next_state = game.revert(leaf_node_state_id) # revert to the previous state and get the next_state.
+                                node_expanded = MCTSNode(action=action, state_steps=next_state, team=team, parent=self)
+                                self.children.append(node_expanded)
+                                print('>>Expand an action that picks up the ball: ', action_choice.action_type)
+                        if ball_reachable:
+                            return
         
         # Start to expand actions
         for action_choice in available_actions:
-            
-            
             team = action_choice.team # need to get which team will perforam this action for backup phrase.
             # Heuristic
             if botbowl.ActionType.UNDO == action_choice.action_type: # (1) ignore UNDO
                 continue
             if botbowl.ActionType.MOVE == action_choice.action_type:
-                # print(self.action.action_type)
                 # (2) More than 3 (included) consecutive actions MOVE are not allowed.
-                if (self.action is not None and self.action.action_type == botbowl.ActionType.MOVE and action_choice.action_type == botbowl.ActionType.MOVE) or (historical_real_action_sequence[-1].action_type == botbowl.ActionType.MOVE): 
+                if self.action is not None and self.action.action_type == botbowl.ActionType.MOVE or (historical_real_action_sequence[-1].action_type == botbowl.ActionType.MOVE and len(root_node.children) == 0): 
                     print('Ignore 3 consecutive MOVE.')
                     continue
                 # (3) Make a surrounding formation around the ball_carrier to reduce the huge size of tree.
@@ -174,7 +169,7 @@ class MCTSNode():
                     if ball_carrier is not None and surround_positions is not None:
                         reach_surrounding_or_carrier = False
                         if ball_carrier != self.action_player: # Ball carrier has no need to form surrounding formation.
-                            print('>>> Start find suitable surrounding position!!!')
+                            print('>>> Start find suitable surrounding position !!!')
                             for position in action_choice.positions:
                                 if position in surround_positions:
                                     reach_surrounding_or_carrier = True

@@ -7,7 +7,7 @@ from copy import deepcopy
 from MCTS import MCTSNode
 
 # set (hyper)parameters
-MCTS_PLAYOUT_NUM = 4
+MCTS_PLAYOUT_NUM = 7
 
 class MCTS():
     def __init__(self, game, current_team, historical_real_action_sequence):
@@ -22,7 +22,7 @@ class MCTS():
     def playout(self):
         # Initialization
         node = self.root # initialize the root node first.
-        print('---- Which is best')
+        print('---- Which would be the real action to be chosen: ')
         print(self.game.state.available_actions)
         print()
         while True: # (1) Selection
@@ -30,7 +30,7 @@ class MCTS():
                 break
             node = node.select()
             self.game.forward(node.state) # get to the state (from current to future) of the leaf node selected.
-            print('>>ActionSeries: ', node.action.action_type, node.action.player, node.action.position)
+            print('>>Path selected using UCB: ', node.action.action_type, node.action.player, node.action.position)
             
         # if node.state is not None: # For root node, no need to forward.
         #     self.game.forward(node.state) # get to the state (from current to future) of the leaf node selected.
